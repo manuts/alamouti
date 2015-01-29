@@ -12,7 +12,7 @@ INCLUDE_CFLAGS	= -I./ -I/target/include
 CFLAGS			= 	$(INCLUDE_CFLAGS) -g -O2 -Wall -fPIC
 LDFLAGS			= 	-L/target/lib
 LDFLAGS			+= 	-luhd -lliquid -lm -lc -lboost_system-mt -lboost_thread-mt -lliquidgr
-LDFLAGS			+= 	-lboost_program_options-mt -lpthread
+LDFLAGS			+= 	-lboost_program_options-mt -lpthread -lvolk
 env				 	= 	LD_LIBRARY_PATH="/target/lib/"
 
 objs			:=			\
