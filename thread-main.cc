@@ -44,8 +44,8 @@
 #define FIND_SAMPLE_OFFSET true
 #define USE_X300 true
 
-#define TX_DELAY 12
-#define RX_DELAY 12
+#define TX_DELAY 0
+#define RX_DELAY 0
 
 namespace po = boost::program_options;
 
@@ -113,6 +113,8 @@ void * tx_worker (void * _ptr)
   std::complex<float> * packer_buff[2];
   std::vector<size_t> tx_chans;
   unsigned int i;
+  size_t num_samps_sent;
+  size_t packer_buff_ptr;
 
   // create a tx streamer
   std::string cpu = "fc32";           // cpu format for the streamer
@@ -130,9 +132,13 @@ void * tx_worker (void * _ptr)
   uhd::tx_metadata_t txmd;
   txmd.start_of_burst = true;
   txmd.end_of_burst = false;
+  txmd.has_time_spec = true;
+  (*(ptr->tx))->set_time_now(uhd::time_spec_t(0.0));
+  boost::this_thread::sleep(boost::posix_time::milliseconds(200));
 
-  (*(ptr->tx))->set_time_now(uhd::time_spec_t(0.0), 0);
-  boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+  uhd::time_spec_t event(0.1);
+  event += (*(ptr->tx))->get_time_now();
+  txmd.time_spec = event;
   tx_begin = time(NULL);
 
   // transmission
@@ -150,21 +156,25 @@ void * tx_worker (void * _ptr)
       tx_loop_number++;
 
       assert(packer_buff_len == (ptr->packer)->work(packer_buff));
+      packer_buff_ptr = 0;
       
       dlay.work(packer_buff[0], packer_buff_len);
 
-      for(i = 0; i < packer_buff_len/tx_buff_len; i++) {
-        tx_buff[0] = packer_buff[0] + i*tx_buff_len;
-        tx_buff[1] = packer_buff[1] + i*tx_buff_len;
-        assert(tx_buff_len == tx_stream->send(tx_buff,
-                                              tx_buff_len,
-                                              txmd));
+      while(packer_buff_ptr + tx_buff_len < packer_buff_len) {
+        tx_buff[0] = packer_buff[0] + packer_buff_ptr;
+        tx_buff[1] = packer_buff[1] + packer_buff_ptr;
+        num_samps_sent = tx_stream->send(tx_buff,
+                                         tx_buff_len,
+                                         txmd);
+        std::cout << num_samps_sent;
+        packer_buff_ptr += num_samps_sent;
       }
-      tx_buff[0] = packer_buff[0] + i*tx_buff_len;
-      tx_buff[1] = packer_buff[1] + i*tx_buff_len;
-      assert(packer_buff_len - i*tx_buff_len == tx_stream->send(tx_buff,
-                                                                packer_buff_len - i*tx_buff_len,
-                                                                txmd));
+      tx_buff[0] = packer_buff[0] + packer_buff_ptr;
+      tx_buff[1] = packer_buff[1] + packer_buff_ptr;
+      assert(packer_buff_len - packer_buff_ptr == 
+             tx_stream->send(tx_buff,
+                             packer_buff_len - packer_buff_ptr,
+                             txmd));
 
       if(SAVE_TO_FILE) {
         for(size_t chan = 0; chan < 2; chan++)
@@ -174,6 +184,7 @@ void * tx_worker (void * _ptr)
 
       *(ptr->num_tx_samps) += packer_buff_len;
       txmd.start_of_burst = false;
+      txmd.has_time_spec = false;
     }
   }
   // transmission ends
@@ -206,7 +217,7 @@ void * rx_worker (void * _ptr)
   std::vector<std::complex<float>*> rx_buff;
   std::complex<float> * unpacker_buff[2];
   std::vector<size_t> rx_chans;
-  float timeout = 1.2;
+  float timeout = 0.2;
   unsigned int i;
 
   // create a rx streamer
@@ -225,10 +236,10 @@ void * rx_worker (void * _ptr)
   uhd::rx_metadata_t rxmd;
 
   (*(ptr->rx))->set_time_now(uhd::time_spec_t(0.0), 0);
-  boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+//  boost::this_thread::sleep(boost::posix_time::milliseconds(100));
   uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS);
   stream_cmd.stream_now = false;
-  stream_cmd.time_spec = uhd::time_spec_t(0.5);
+  stream_cmd.time_spec = uhd::time_spec_t(0.1);
   rx_stream->issue_stream_cmd(stream_cmd);
   rx_begin = time(NULL);
 
@@ -257,6 +268,7 @@ void * rx_worker (void * _ptr)
           std::cerr << rxmd.strerror() << "\n";
           break;
         }
+        timeout = 0.1;
       } 
       if(rxmd.error_code) {
         std::cerr << rxmd.strerror() << "\n";
@@ -272,6 +284,7 @@ void * rx_worker (void * _ptr)
         std::cerr << rxmd.strerror() << "\n";
         break;
       }
+      timeout = 0.1;
 
       dlay.work(unpacker_buff[1], unpacker_buff_len);
 
@@ -285,8 +298,6 @@ void * rx_worker (void * _ptr)
       }
 
       *(ptr->num_rx_samps) += unpacker_buff_len;
-      
-      timeout = 0.1;
     }
   }
   // reception ends
@@ -566,7 +577,7 @@ int UHD_SAFE_MAIN(int argc, char **argv)
     }
   }
   printf("Delay : %d\n", delay);
-  std::cout << "Frame Length = " << tx_buff_len << std::endl;
+  std::cout << "Frame Length = " << packer_buff_len << std::endl;
   std::cout << "num_tx_samps = " << num_tx_samps << std::endl;
   std::cout << "num_rx_samps = " << num_rx_samps << std::endl;
   std::cout << "TX Loop Number = " << tx_loop_number << std::endl;

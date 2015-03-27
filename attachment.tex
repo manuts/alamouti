@@ -1,0 +1,119 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage[margin=1.5in]{geometry}
+\usepackage{hyperref}
+\setlength{\parskip}{1em}
+
+\begin{document}
+Let me describe the system I have. For hardware I use, either 2 USRP
+X300s(with 2 daughter boards each), or 2 pairs of N210 connected with
+MIMO cable.
+
+In each frame I transmit a PN1 sequence from TX1 while TX2 transmits
+zeros. Once PN1 is transmitted I transmit $m$ zeros on both TX, where $m$ is
+the delay of the pulse shaping filter in number of symbols.
+Then I transmit PN2 from TX2 while TX1 transmits zeros. Once PN2 is
+transmitted I transmit m zeros from both TX.
+After this I transmit a "phasing" sequence consisting of alternating 1.0 
+and -1.0. The length of this sequence is currently taken to be the
+same as the length of the PN sequences.
+After this I transmit the data - Alamouti encoded. Currently I send
+another known sequence of $q$ symbols with BPSK modulation.
+After data I transmit a sequence of m zeros from both the TX antennas.
+
+Let the PN sequences be $p$ symbols long. Let the data be
+$q$ symbols long. So in each frame, the transmissions from
+each of the channels are
+
+\begin{center}
+\begin{tabular}{||c|c|c|c|c|c|c|c||}
+  Symbol Count  &$p$    &$m$    &$p$    &$m$    &$p$      &$q$      &$m$    \\
+  Channel 1     &PN1    &Zeros  &PN2    &Zeros  &Phasing  &Payload  &Zeros  \\
+  Channel 2     &Zeros  &Zeros  &Zeros  &Zeros  &Phasing  &Payload  &Zeros  \\
+\end{tabular}
+\end{center}
+
+\noindent
+I use $p = 63, m = 3, q = 1024$. So I get a frame that is $L = 1222$
+symbols long.
+
+I construct the samples to be transmitted by passing the above frame
+through a pulse shaping filter with interpolation k = 4, symbol delay m
+= 3, and excess bandwidth beta = 0.5. I use 2 independent pulse shaping
+filters on each of the TX streams. I call the execute functions together
+on each of these shaping filters to ensure the parallelism in the sample
+streams. The frame generator I use can be found at\cite{bib:framegen}.
+
+After interpolation I get 2 streams of $k*L (=4888)$ samples each. In the
+transmit thread, I ask for these streams of $k*L$ samples from the frame
+generator, push it into the TX USRP configured to work in MIMO. In the
+receive thread I collect 2 streams of $k*L$ samples from the RX USRP and
+push it into frame synchronizer. These two things are repeated in a
+loop. The front end which implements the transmit and the receive
+threads can be found at\cite{bib:main}.
+
+There are 2 samples streams fed into the synchronizer - one for each RX
+antenna. The synchronizer has in total 4 detector modules. On each
+stream I have one detector for PN1 and another detector PN2.
+
+Each time the frame synchronizer is executed I pass 2 streams of $k*L$
+samples. The frame may be starting at any arbit sample in this set of $k*L$ of samples.
+So let us assume that PN1 detector on RX1 returns true at index $i_{11}$.
+Let the index at which PN1 detector on RX2 returing true be $i_{12}$.
+Let the PN2 detector on RX1 return true at index $i_{21}$.
+Let the PN2 detector on RX2 return true at index $i_{22}$.
+
+Since both RX1 and RX2 should be receiving same signals(except for a complex
+scaling due to path differences), we also expect that $i_{12} \simeq i_{11}$
+and $i_{21} \simeq i_{22}$. Since there is $p + m$ symbols between PN1 and PN2,
+we expect $k*(p + m) = 4*(63 + 3) = 264$ sample difference between PN1 and PN2.
+ie, we expect that, $i_{21} - i_{11} \simeq 264$, and $i_{22} - i_{21} \simeq 264$.
+Since the PNs repeat every $k*L$ samples, and we are calling the execute
+funtion on $k*L$ samples, we expect these indexes to not change by a lot over
+the entire experiment. 
+
+Well, I find that the indexes remain the same over the entire experiment. When
+I run the experiment on N210s I find that $i_{12} = i_{11}$ and $i_{22} =
+i_{21}$. Below is one set of values when I ran the experiment on the N210s.
+\begin{itemize}
+  \item $i_{11}$:  1268
+  \item $i_{12}$:  1268
+  \item $i_{21}$:  1538
+  \item $i_{22}$:  1538
+\end{itemize}
+
+what I find amusing is that $i_{21} - i_{11} = 270$, where are we exepct it to
+be 264. So I came to the conclusion that somehow a delay of 6 samples is
+happening to TX2 chain. So I introduced a 6 sample delay in TX1 chain and then
+things started to fall into place.
+
+When I run experiment on X300s, there is some delay between the TX chanins as
+in the previous case, and also a delay in the RX chains. When I introduced the
+delay corrections in code there also things fell into place.
+
+To explain how I am using the detector - modules. Currently I use the detector
+module only to indicate the frame arrival and also to measure the coarse
+frequency correction. I have 2 nco\_coarse, one for each channel. Each have
+same frequency. I use 4 detector modules to come up with their own dphi\_hat
+measurements. I average these 4 measurements and update the nco\_coarse
+frequency. I don't use the tau\_hat measurements from the detector currently.
+Instead what I have is a firpfb and its derivative with initial phase of
+num\_filters/2 at the start. I use the average of the error values from the 2
+channels to update the phase. I use power of the detected PN sequence(after pfb)
+to compute the channel gains.
+
+Some of my other colleagues are working on setting up MIMO with OFDM. But they
+also have issues getting it to work, because of the delay issues.
+
+\begin{thebibliography}{9}
+\bibitem{bib:framegen}
+  \url{https://github.com/manuts/liquid-gr/blob/tdma-ch1/src/alamouti/framegen.cc}
+
+\bibitem{bib:main}
+  \url{https://github.com/manuts/alamouti/blob/master/thread-main.cc}
+
+\bibitem{bib:framesync}
+  \url{https://github.com/manuts/liquid-gr/blob/tdma-ch1/src/alamouti/framesync.cc}
+
+\end{thebibliography}
+\end{document}
