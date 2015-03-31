@@ -90,9 +90,8 @@ void * rx_worker (void * _ptr)
   liquid::alamouti::delay dlay(RX_DELAY);
 
   uhd::rx_metadata_t rxmd;
-
   (*(ptr->rx))->set_time_now(uhd::time_spec_t(0.0), 0);
-//  boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+
   uhd::stream_cmd_t stream_cmd(uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS);
   stream_cmd.stream_now = false;
   stream_cmd.time_spec = uhd::time_spec_t(0.1);

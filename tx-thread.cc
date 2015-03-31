@@ -91,14 +91,12 @@ void * tx_worker (void * _ptr)
   liquid::alamouti::delay dlay(TX_DELAY);
 
   uhd::tx_metadata_t txmd;
+  (*(ptr->tx))->set_time_now(uhd::time_spec_t(0.0));
   txmd.start_of_burst = true;
   txmd.end_of_burst = false;
   txmd.has_time_spec = true;
-  (*(ptr->tx))->set_time_now(uhd::time_spec_t(0.0));
-  boost::this_thread::sleep(boost::posix_time::milliseconds(200));
 
   uhd::time_spec_t event(0.1);
-  event += (*(ptr->tx))->get_time_now();
   txmd.time_spec = event;
   tx_begin = time(NULL);
 
